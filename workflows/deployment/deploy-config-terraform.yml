@@ -1,0 +1,42 @@
+.deploy_config:
+  image: $CONTAINER_REGISTRY/dev-containers/deployment/terraform_deploy:latest
+  script:
+
+    # Terraform dir
+    - TERRAFORM_DIR="${TERRAFORM_DIR:-terraform}"
+
+    # Нужно ли port-forward
+    - CONSUL_SERVER_FORWARD="${CONSUL_SERVER_FORWARD:-false}"
+
+    # kubeconfig
+    - |
+      KUBECONFIG_VAR_NAME="${DEPLOY_ENV}_KUBECONFIG"
+      KUBECONFIG_VALUE=$(printenv "$KUBECONFIG_VAR_NAME")
+      echo "$KUBECONFIG_VALUE" | base64 -d > "${TERRAFORM_DIR}/.kubeconfig"
+      export KUBECONFIG="${TERRAFORM_DIR}/.kubeconfig"
+
+    # Port-forward если нужно
+    - |
+      if [ "$CONSUL_SERVER_FORWARD" = "true" ]; then
+        echo "Starting port-forward to Consul..."
+        kubectl port-forward -n "$CONSUL_SERVER_NAMESPACE" svc/"$CONSUL_SERVER_SVC" 8500:8500 > /dev/null 2>&1 &
+        PF_PID=$!
+        sleep 5
+
+        # Проверка что API доступен
+        curl -sf http://localhost:8500/v1/status/leader || (echo "Consul not reachable" && exit 1)
+      fi
+
+    # Terraform
+    - cd "$TERRAFORM_DIR"
+
+    # Инициализируем terraform
+    - terraform init
+
+    # Переходим в workspace проекта
+    - terraform workspace select "${TERRAFORM_WORKSPACE}-configs" || terraform workspace new "${TERRAFORM_WORKSPACE}-configs"
+
+    # Применяем конфигурацию
+    - terraform apply -auto-approve -var="env=${DEPLOY_ENV}" -var="chart_registry=${CHART_REGISTRY}" -var="chart_registry_username=${CHART_REGISTRY_USERNAME}" -var="chart_registry_password=${CHART_REGISTRY_PASSWORD}"
+  only:
+    - main

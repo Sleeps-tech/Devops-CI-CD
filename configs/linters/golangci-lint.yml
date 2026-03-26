@@ -1,0 +1,86 @@
+version: "2"
+run:
+  go: "1.24"
+  tests: false
+  allow-parallel-runners: true
+output:
+  formats:
+    tab:
+      path: stdout
+      colors: false
+linters:
+  enable:
+    - dupl
+    - errname
+    - exhaustive
+    - forbidigo
+    - goconst
+    - gocritic
+    - gosec
+    - importas
+    - intrange
+    - maintidx
+    - makezero
+    - misspell
+    - mnd
+    - nestif
+    - perfsprint
+    - prealloc
+    - testpackage
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+  disable:
+    - govet
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*os.File).WriteString
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocyclo:
+      min-complexity: 40
+    gosec:
+      excludes:
+        - G101
+    mnd:
+      checks:
+        - argument
+        - case
+        - condition
+        - operation
+        - return
+        - assign
+      ignored-functions:
+        - math.*
+        - strconv.*
+        - rand.*
+        - time.*
+    nestif:
+      min-complexity: 10
+    wsl:
+      force-err-cuddling: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 75
+  max-same-issues: 5
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

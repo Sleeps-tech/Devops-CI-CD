@@ -1,0 +1,22 @@
+FROM sleeps.cr.cloud.ru/dev-containers/building/go_swagger_builder AS builder
+
+WORKDIR /go/src/app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN swag init
+
+RUN go build -ldflags="-s -w" -o /go/bin/app main.go
+RUN upx -9 /go/bin/app
+
+FROM alpine:latest AS runner
+
+COPY --from=builder /go/bin/app ./
+COPY --from=builder /go/src/app/docs ./
+
+EXPOSE 8080
+
+CMD ["./app"]

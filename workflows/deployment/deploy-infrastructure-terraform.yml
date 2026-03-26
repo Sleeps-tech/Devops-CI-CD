@@ -1,0 +1,28 @@
+.deploy_infrastructure:
+  image: $ARTIFACT_REGISTRY_HOST/dev-containers/deployment/terraform_deploy:latest
+  script:
+    # Определяем путь до папки terraform
+    - |
+      if [ -z "$TERRAFORM_DIR" ]; then
+          TERRAFORM_DIR="terraform"
+      fi
+
+    # Задаем конфиг подключения к кластеру
+    - |
+      KUBECONFIG_VAR_NAME="${DEPLOY_ENV}_KUBECONFIG"
+      KUBECONFIG_VALUE=$(printenv "$KUBECONFIG_VAR_NAME")
+      echo "$KUBECONFIG_VALUE" | base64 -d > "${TERRAFORM_DIR}/.kubeconfig"
+
+    # Переходим в директорию terraform
+    - cd "$TERRAFORM_DIR"
+
+    # Инициализируем terraform
+    - terraform init
+
+    # Переходим в workspace проекта
+    - terraform workspace select -or-create "${TERRAFORM_WORKSPACE}-infrastructure"
+
+    # Применяем конфигурацию
+    - terraform apply -auto-approve -var="env=${DEPLOY_ENV}" -var="chart_registry=${ARTIFACT_REGISTRY_HOST}" -var="chart_registry_username=${ARTIFACT_REGISTRY_USER}" -var="chart_registry_password=${ARTIFACT_REGISTRY_PASSWORD}" -var-file="components/${DEPLOY_ENV}.tfvars"
+  only:
+    - main

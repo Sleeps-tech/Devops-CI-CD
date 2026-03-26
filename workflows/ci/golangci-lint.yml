@@ -1,0 +1,24 @@
+
+.golangci-lint:
+  image: $CONTAINER_REGISTRY/dev-containers/linting/golangci_lint:latest
+  script:
+    - go version
+    - 'curl --header "PRIVATE-TOKEN: $CI_CD_ACCESS_TOKEN" "https://gitlab.mai.ru/api/v4/projects/5227/repository/files/configs%2Flinters%2Fgolangci-lint.yml/raw" --output golangci-lint.yml'
+    - golangci-lint run --config golangci-lint.yml
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_OPEN_MERGE_REQUESTS'
+      changes:
+        - '**/*'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - internal/**/*
+        - cmd/**/*
+        - configs/**/*
+        - main.go
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - internal/**/*
+        - cmd/**/*
+        - go.*
+        - main.go

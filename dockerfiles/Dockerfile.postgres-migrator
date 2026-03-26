@@ -1,0 +1,7 @@
+FROM sleeps.cr.cloud.ru/dev-containers/building/postgres_migrations_builder:latest
+
+WORKDIR /app
+
+COPY migrations ./migrations
+
+CMD ["goose", -dir", "migrations", "up"]

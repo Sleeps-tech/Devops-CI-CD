@@ -1,0 +1,21 @@
+ARG PYTHON_VERSION=3.10-slim
+FROM python:${PYTHON_VERSION}
+
+ARG APP_PATH=app
+
+RUN mkdir -p ${APP_PATH}
+
+WORKDIR ${APP_PATH}
+
+COPY ${APP_PATH}/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ${APP_PATH}/ ./
+
+RUN python manage.py collectstatic --noinput
+
+EXPOSE 8000
+
+ENV APP_PATH=${APP_PATH}
+
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:8000 ${APP_PATH}.wsgi:application"]

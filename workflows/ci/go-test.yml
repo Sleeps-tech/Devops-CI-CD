@@ -1,0 +1,78 @@
+.run_tests:
+  image: golang:1.24-alpine
+  before_script:
+    - apk add --no-cache git build-base
+    - export CGO_ENABLED=1
+    - go mod download
+  script:
+    - go test -v $TEST_PATH
+    - go test -v -race $TEST_PATH
+    - go test -v -coverprofile=coverage.out -coverpkg=$COVERAGE_PKG $TEST_PATH
+    - go tool cover -func=coverage.out
+    - go tool cover -html=coverage.out -o coverage.html
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.out
+    paths:
+    - coverage.html
+    - coverage.out
+    expire_in: 1 week
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_OPEN_MERGE_REQUESTS'
+      changes:
+        - '**/*'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - internal/**/*
+        - cmd/**/*
+        - go.*
+        - cmd/app/main.go
+        - '**/*_test.go'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - internal/**/*
+        - cmd/**/*
+        - go.*
+        - cmd/app/main.go
+        - '**/*_test.go'
+
+.check_coverage:
+  image: golang:1.24-alpine
+  script:
+    - apk add --no-cache bc
+    - |
+      MIN_COVERAGE=${MIN_COVERAGE:-75}
+      COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+      echo "Code coverage: ${COVERAGE}%"
+      if (( $(echo "$COVERAGE < $MIN_COVERAGE" | bc -l) )); then
+        echo "ERROR: Code coverage is ${COVERAGE}%, but minimum required is ${MIN_COVERAGE}%"
+        exit 1
+      fi
+      echo "✓ Code coverage ${COVERAGE}% meets minimum requirement of ${MIN_COVERAGE}%"
+  dependencies:
+    - run_tests
+  needs:
+    - job: run_tests
+      artifacts: true
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_OPEN_MERGE_REQUESTS'
+      changes:
+        - '**/*'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - internal/**/*
+        - cmd/**/*
+        - go.*
+        - cmd/app/main.go
+        - '**/*_test.go'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - internal/**/*
+        - cmd/**/*
+        - go.*
+        - cmd/app/main.go
+        - '**/*_test.go'
