@@ -1,0 +1,72 @@
+name: Deploy Infrastructure (Terraform)
+
+on:
+  workflow_call:
+    inputs:
+      terraform_dir:
+        description: "Path to the Terraform directory (default: terraform)"
+        required: false
+        type: string
+        default: "terraform"
+      deploy_env:
+        description: "Target deployment environment (e.g. dev, staging, prod)"
+        required: true
+        type: string
+      terraform_workspace:
+        description: "Terraform workspace prefix (workspace will be {terraform_workspace}-infrastructure)"
+        required: true
+        type: string
+      artifact_registry_host:
+        description: "Artifact/chart registry host (used both for image pull and as chart_registry var)"
+        required: true
+        type: string
+    secrets:
+      kubeconfig:
+        description: "Base64-encoded kubeconfig for the target cluster"
+        required: true
+      artifact_registry_user:
+        description: "Artifact registry username"
+        required: true
+      artifact_registry_password:
+        description: "Artifact registry password"
+        required: true
+
+jobs:
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    # Only run on the main branch (mirrors `only: - main`)
+    if: github.ref == 'refs/heads/main'
+
+    container:
+      image: ${{ inputs.artifact_registry_host }}/dev-containers/deployment/terraform_deploy:latest
+      credentials:
+        username: ${{ secrets.artifact_registry_user }}
+        password: ${{ secrets.artifact_registry_password }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write kubeconfig
+        run: |
+          echo "${{ secrets.kubeconfig }}" | base64 -d > "${{ inputs.terraform_dir }}/.kubeconfig"
+
+      - name: Terraform init
+        working-directory: ${{ inputs.terraform_dir }}
+        run: terraform init
+
+      - name: Select or create workspace
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform workspace select -or-create "${{ inputs.terraform_workspace }}-infrastructure"
+
+      - name: Terraform apply
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform apply -auto-approve \
+            -var="env=${{ inputs.deploy_env }}" \
+            -var="chart_registry=${{ inputs.artifact_registry_host }}" \
+            -var="chart_registry_username=${{ secrets.artifact_registry_user }}" \
+            -var="chart_registry_password=${{ secrets.artifact_registry_password }}" \
+            -var-file="components/${{ inputs.deploy_env }}.tfvars"

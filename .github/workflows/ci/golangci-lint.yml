@@ -1,0 +1,71 @@
+name: golangci-lint
+
+on:
+  workflow_call:
+    inputs:
+      go_version:
+        description: "Go version to use"
+        required: false
+        type: string
+        default: "1.24"
+      golangci_lint_version:
+        description: "golangci-lint version to use"
+        required: false
+        type: string
+        default: "v2.1.6"
+      ci_cd_repo:
+        description: "Repository containing the golangci-lint config (org/repo)"
+        required: false
+        type: string
+        default: ""
+      ci_cd_ref:
+        description: "Git ref of the ci-cd repository to fetch config from"
+        required: false
+        type: string
+        default: "main"
+      config_path:
+        description: "Path to golangci-lint config relative to ci-cd repo root"
+        required: false
+        type: string
+        default: "configs/linters/golangci-lint.yml"
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    # Mirrors allow_failure: true — lint failures don't block the pipeline
+    continue-on-error: true
+
+    steps:
+      - name: Checkout application source
+        uses: actions/checkout@v4
+
+      # Checkout the ci-cd config repo to get the shared golangci-lint config
+      - name: Checkout ci-cd config repository
+        if: inputs.ci_cd_repo != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.ci_cd_repo }}
+          ref: ${{ inputs.ci_cd_ref }}
+          path: _ci_cd_repo
+
+      - name: Resolve config path
+        id: config
+        run: |
+          if [[ -n "${{ inputs.ci_cd_repo }}" ]]; then
+            echo "path=_ci_cd_repo/${{ inputs.config_path }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=${{ inputs.config_path }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ inputs.golangci_lint_version }}
+          args: --config ${{ steps.config.outputs.path }}

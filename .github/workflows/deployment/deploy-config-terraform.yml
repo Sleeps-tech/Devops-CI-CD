@@ -1,0 +1,111 @@
+name: Deploy Config (Terraform)
+
+on:
+  workflow_call:
+    inputs:
+      terraform_dir:
+        description: "Path to the Terraform directory (default: terraform)"
+        required: false
+        type: string
+        default: "terraform"
+      deploy_env:
+        description: "Target deployment environment (e.g. dev, staging, prod)"
+        required: true
+        type: string
+      terraform_workspace:
+        description: "Terraform workspace prefix (workspace will be {terraform_workspace}-configs)"
+        required: true
+        type: string
+      chart_registry:
+        description: "Helm chart registry host"
+        required: true
+        type: string
+      registry_host:
+        description: "Container registry host for the terraform_deploy image"
+        required: true
+        type: string
+      consul_server_forward:
+        description: "Whether to port-forward Consul before running Terraform"
+        required: false
+        type: boolean
+        default: false
+      consul_server_namespace:
+        description: "Kubernetes namespace of the Consul service (required if consul_server_forward=true)"
+        required: false
+        type: string
+        default: ""
+      consul_server_svc:
+        description: "Kubernetes service name of Consul (required if consul_server_forward=true)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      kubeconfig:
+        description: "Base64-encoded kubeconfig for the target cluster"
+        required: true
+      chart_registry_username:
+        description: "Helm chart registry username"
+        required: true
+      chart_registry_password:
+        description: "Helm chart registry password"
+        required: true
+      registry_username:
+        description: "Container registry username (to pull the terraform_deploy image)"
+        required: true
+      registry_password:
+        description: "Container registry password (to pull the terraform_deploy image)"
+        required: true
+
+jobs:
+  deploy-config:
+    name: Deploy Config
+    runs-on: ubuntu-latest
+    # Only run on the main branch (mirrors `only: - main`)
+    if: github.ref == 'refs/heads/main'
+
+    container:
+      image: ${{ inputs.registry_host }}/dev-containers/deployment/terraform_deploy:latest
+      credentials:
+        username: ${{ secrets.registry_username }}
+        password: ${{ secrets.registry_password }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write kubeconfig
+        run: |
+          echo "${{ secrets.kubeconfig }}" | base64 -d > "${{ inputs.terraform_dir }}/.kubeconfig"
+          echo "KUBECONFIG=${{ inputs.terraform_dir }}/.kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Port-forward to Consul
+        if: inputs.consul_server_forward == true
+        run: |
+          echo "Starting port-forward to Consul (${{ inputs.consul_server_namespace }}/${{ inputs.consul_server_svc }})..."
+          kubectl port-forward \
+            -n "${{ inputs.consul_server_namespace }}" \
+            svc/"${{ inputs.consul_server_svc }}" \
+            8500:8500 > /dev/null 2>&1 &
+          sleep 5
+          curl -sf http://localhost:8500/v1/status/leader \
+            || (echo "❌ Consul not reachable" && exit 1)
+          echo "✅ Consul is reachable"
+
+      - name: Terraform init
+        working-directory: ${{ inputs.terraform_dir }}
+        run: terraform init
+
+      - name: Select or create workspace
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform workspace select "${{ inputs.terraform_workspace }}-configs" \
+            || terraform workspace new "${{ inputs.terraform_workspace }}-configs"
+
+      - name: Terraform apply
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform apply -auto-approve \
+            -var="env=${{ inputs.deploy_env }}" \
+            -var="chart_registry=${{ inputs.chart_registry }}" \
+            -var="chart_registry_username=${{ secrets.chart_registry_username }}" \
+            -var="chart_registry_password=${{ secrets.chart_registry_password }}"

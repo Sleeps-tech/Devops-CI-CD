@@ -1,0 +1,100 @@
+name: Go Tests
+
+on:
+  workflow_call:
+    inputs:
+      test_path:
+        description: "Go test path pattern (e.g. ./internal/... or ./...)"
+        required: true
+        type: string
+      coverage_pkg:
+        description: "Package pattern for -coverpkg flag (e.g. ./internal/...)"
+        required: true
+        type: string
+      min_coverage:
+        description: "Minimum required code coverage percentage"
+        required: false
+        type: number
+        default: 75
+      go_version:
+        description: "Go version to use"
+        required: false
+        type: string
+        default: "1.24"
+
+jobs:
+  run-tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v ${{ inputs.test_path }}
+
+      - name: Run tests with race detector
+        run: go test -v -race ${{ inputs.test_path }}
+
+      - name: Run tests with coverage
+        run: |
+          go test -v \
+            -coverprofile=coverage.out \
+            -coverpkg=${{ inputs.coverage_pkg }} \
+            ${{ inputs.test_path }}
+
+      - name: Print coverage summary
+        run: go tool cover -func=coverage.out
+
+      - name: Generate HTML coverage report
+        run: go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 7
+
+  check-coverage:
+    name: Check Minimum Coverage
+    runs-on: ubuntu-latest
+    needs: run-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache: true
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+
+      - name: Check coverage threshold
+        run: |
+          MIN_COVERAGE=${{ inputs.min_coverage }}
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Code coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < $MIN_COVERAGE" | bc -l) )); then
+            echo "❌ ERROR: Code coverage is ${COVERAGE}%, but minimum required is ${MIN_COVERAGE}%"
+            exit 1
+          fi
+          echo "✅ Code coverage ${COVERAGE}% meets minimum requirement of ${MIN_COVERAGE}%"
